@@ -18,6 +18,12 @@ target_link_libraries(core PRIVATE)
 target_link_libraries(core PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(core PUBLIC PkgConfig::LIBDPDK_STATIC)
 
+# The EPS channel backend (eps_channel.cc) needs libbpf. PUBLIC so that every
+# executable linking the static 'core' library picks it up.
+if(LIBBPF_FOUND)
+  target_link_libraries(core PUBLIC PkgConfig::LIBBPF)
+endif()
+
 # link_directories($ENV{RTE_SDK}/$ENV{RTE_TARGET}/lib/)
 # find_library(DPDK_LIB NAMES libdpdk.a dpdk)
 # target_link_libraries(core PRIVATE dpdk numa dl)

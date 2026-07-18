@@ -166,6 +166,26 @@ struct MachnetChannelStats {
 } __attribute__((aligned(CACHE_LINE_SIZE)));
 typedef struct MachnetChannelStats MachnetChannelStats_t;
 
+/*
+ * EPS integration: binds an EPS connection (identified by its eBPF conn_key
+ * {pid, fd}) to a Machnet flow, so that the Machnet engine can deliver
+ * received messages directly into the connection's rx_ring (USER_RINGBUF)
+ * and route tx_ring records onto the flow.
+ *
+ * Orientation convention: `flow` is always in TX orientation, i.e.,
+ * src_ip/src_port is the *local* Machnet endpoint (exactly as returned by
+ * `machnet_connect()`); for inbound flows reported via
+ * MACHNET_CTRL_OP_EPS_NEW_FLOW the stack posts the tuple already swapped
+ * into this orientation, so the daemon can echo it back verbatim in a
+ * BIND_CONN request.
+ */
+struct MachnetEpsConnBind {
+  MachnetFlow_t flow;  // TX orientation (src = local Machnet endpoint).
+  uint32_t pid;        // EPS conn_key.pid (tgid).
+  uint32_t fd;         // EPS conn_key.fd.
+};
+typedef struct MachnetEpsConnBind MachnetEpsConnBind_t;
+
 struct MachnetCtrlQueueEntry {
   uint64_t id;
 #define MACHNET_CTRL_OP_CREATE_FLOW 0x0001
@@ -175,6 +195,13 @@ struct MachnetCtrlQueueEntry {
 #define MACHNET_CTRL_OP_TCP_CREATE_FLOW 0x0011
 #define MACHNET_CTRL_OP_TCP_DESTROY_FLOW 0x0012
 #define MACHNET_CTRL_OP_TCP_LISTEN 0x0013
+// EPS integration opcodes. BIND/UNBIND are sent by the EPS daemon on the
+// ctrl SQ; NEW_FLOW is posted by the stack on the ctrl CQ when a message
+// arrives on a flow with no bound EPS connection (e.g., an inbound
+// connection from a remote host).
+#define MACHNET_CTRL_OP_EPS_BIND_CONN 0x0021
+#define MACHNET_CTRL_OP_EPS_UNBIND_CONN 0x0022
+#define MACHNET_CTRL_OP_EPS_NEW_FLOW 0x0023
   uint32_t opcode;
 #define MACHNET_CTRL_STATUS_OK 0x0000
 #define MACHNET_CTRL_STATUS_ERROR 0x0001
@@ -182,6 +209,7 @@ struct MachnetCtrlQueueEntry {
   union {
     MachnetFlow_t flow_info;
     MachnetListenerInfo_t listener_info;
+    MachnetEpsConnBind_t eps_bind;
   };
 };
 typedef struct MachnetCtrlQueueEntry MachnetCtrlQueueEntry_t;

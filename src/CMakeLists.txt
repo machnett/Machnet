@@ -22,6 +22,16 @@ set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointe
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBDPDK_STATIC libdpdk>=23.11 libdpdk<24.0 REQUIRED IMPORTED_TARGET)
 
+# Optional 'libbpf' (>= 1.1 for the user_ring_buffer API): enables the EPS
+# channel backend (see src/include/eps_channel.h).
+pkg_check_modules(LIBBPF libbpf>=1.1 IMPORTED_TARGET)
+if(LIBBPF_FOUND)
+  message(STATUS "libbpf found - enabling the Machnet EPS channel backend.")
+  add_compile_definitions(MACHNET_EPS_ENABLED)
+else()
+  message(STATUS "libbpf not found - the Machnet EPS channel backend is disabled.")
+endif()
+
 include_directories(ext)
 add_subdirectory(ext)
 

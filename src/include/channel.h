@@ -23,6 +23,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace juggler {
 class MachnetEngine;  // forward declaration
@@ -69,7 +70,7 @@ class ShmChannel {
              const MachnetChannelCtx_t *channel_ctx,
              const size_t channel_mem_size, const bool is_posix_shm,
              int channel_fd);
-  ~ShmChannel();
+  virtual ~ShmChannel();
   ShmChannel &operator=(const ShmChannel &) = delete;
 
   // Return a pointer to the channel's context.
@@ -144,12 +145,15 @@ class ShmChannel {
   /**
    * @brief Dequeues pending control work queue entries from the channel.
    *
+   * Virtual: alternative channel backends (e.g., `EpsChannel') may intercept
+   * backend-specific control opcodes here before the engine sees them.
+   *
    * @param ctrl_entries  A pointer to the array of `MachnetCtrlQueueEntry_t'
    * @param nb_entries    The max number of entries in the array above.
    * @return              The number of entries dequeued.
    */
-  uint32_t DequeueCtrlRequests(MachnetCtrlQueueEntry_t *ctrl_entries,
-                               uint32_t nb_entries) {
+  virtual uint32_t DequeueCtrlRequests(MachnetCtrlQueueEntry_t *ctrl_entries,
+                                       uint32_t nb_entries) {
     return __machnet_channel_ctrl_sq_dequeue(ctx_, nb_entries, ctrl_entries);
   }
 
@@ -184,13 +188,17 @@ class ShmChannel {
    * @brief Enqueues a batch of messages to the channel (destined to the
    * application).
    *
+   * Virtual: this is the RX delivery seam. Alternative backends (e.g.,
+   * `EpsChannel') override it to deliver completed messages somewhere other
+   * than the channel's Machnet->App ring.
+   *
    * @param msgs        A pointer to the array of pointers to messages to be
    *                    enqueued.
    * @param nb_msgs     The number of messages enqueued (Limited to
    *                    `MsgBufBatch::kMaxBurst')
    * @return           The number of messages enqueued.
    */
-  uint32_t EnqueueMessages(MsgBuf *const *msgs, uint32_t nb_msgs) {
+  virtual uint32_t EnqueueMessages(MsgBuf *const *msgs, uint32_t nb_msgs) {
     MachnetRingSlot_t slots[MsgBufBatch::kMaxBurst];
     auto nmsgs = std::min(nb_msgs, MsgBufBatch::kMaxBurst);
 
@@ -206,16 +214,24 @@ class ShmChannel {
    * @brief Enqueues a batch of messages to the channel (destined to the
    * application).
    *
+   * Routed through the virtual `MsgBuf' pointer overload so that alternative
+   * channel backends (e.g., `EpsChannel') intercept batch enqueues too.
+   *
    * @param batch       The batch of messages to enqueue.
    * @return uint32_t   The number of messages enqueued.
    */
   uint32_t EnqueueMessages(MsgBufBatch *batch) {
-    return EnqueueMessages(batch->buf_indices(), batch->GetSize());
+    return EnqueueMessages(batch->bufs(), batch->GetSize());
   }
 
   /**
    * @brief Dequeues a number of messages from the channel (destined to the
    * Machnet stack).
+   *
+   * Virtual: this is the TX intake seam. Alternative backends (e.g.,
+   * `EpsChannel') override it to source outgoing messages from somewhere
+   * other than the channel's App->Machnet ring. The `DequeueMessages(batch)'
+   * convenience wrapper dispatches through this method.
    *
    * @param msg_indices        A pointer to the array of `MachnetRingSlot_t'
    *                           objects (indices of buffers).
@@ -223,8 +239,8 @@ class ShmChannel {
    *                           objects.
    * @param nb_msgs            The number of messages to dequeue.
    */
-  uint32_t DequeueMessages(MachnetRingSlot_t *msg_indices, MsgBuf **msgs,
-                           uint32_t nb_msgs) {
+  virtual uint32_t DequeueMessages(MachnetRingSlot_t *msg_indices,
+                                   MsgBuf **msgs, uint32_t nb_msgs) {
     uint32_t ret =
         __machnet_channel_app_ring_dequeue(ctx_, nb_msgs, msg_indices);
     for (uint32_t i = 0; i < ret; i++) {
@@ -565,6 +581,22 @@ class ChannelManager {
   bool AddChannel(const char *name, size_t machnet_ring_slot_nr,
                   size_t app_ring_slot_nr, size_t buf_ring_slot_nr,
                   size_t buffer_size) {
+    return AddChannelOfType<T>(name, machnet_ring_slot_nr, app_ring_slot_nr,
+                               buf_ring_slot_nr, buffer_size);
+  }
+
+  /**
+   * Create a new Machnet dataplane channel backed by a concrete channel class
+   * `C' (which must derive from `T'). Any extra arguments are forwarded to
+   * `C's constructor after the standard five channel arguments. This is used
+   * to instantiate alternative channel backends (e.g., `EpsChannel').
+   */
+  template <class C, typename... ExtraArgs>
+  bool AddChannelOfType(const char *name, size_t machnet_ring_slot_nr,
+                        size_t app_ring_slot_nr, size_t buf_ring_slot_nr,
+                        size_t buffer_size, ExtraArgs &&...extra_args) {
+    static_assert(std::is_base_of<T, C>::value,
+                  "Channel class must derive from the manager's channel type");
     const std::lock_guard<std::mutex> lock(mtx_);
     if (channels_.size() >= kMaxChannelNr) {
       LOG(WARNING) << "Too many channels.";
@@ -588,9 +620,10 @@ class ChannelManager {
       return false;
     }
 
-    channels_.insert(
-        std::make_pair(name, std::make_shared<T>(name, ctx, shm_segment_size,
-                                                 is_posix_shm, channel_fd)));
+    channels_.insert(std::make_pair(
+        name, std::make_shared<C>(name, ctx, shm_segment_size, is_posix_shm,
+                                  channel_fd,
+                                  std::forward<ExtraArgs>(extra_args)...)));
     return true;
   }
 

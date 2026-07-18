@@ -86,6 +86,18 @@ MachnetChannelCtx_t *machnet_bind(int shm_fd, size_t *channel_size);
 void *machnet_attach();
 
 /**
+ * @brief Like `machnet_attach()`, but allows passing channel creation flags
+ * (`MACHNET_CHANNEL_INFO_FLAG_*` from machnet_ctrl.h). Used by the EPS daemon
+ * to request an EPS-backed channel (MACHNET_CHANNEL_INFO_FLAG_EPS), where the
+ * Machnet engine itself drains the EPS eBPF tx_ring and delivers received
+ * messages into the per-connection USER_RINGBUF rx_rings.
+ *
+ * @param flags Channel creation flags (0 for a regular channel).
+ * @return A pointer to the channel context on success, NULL otherwise.
+ */
+void *machnet_attach_ex(uint32_t flags);
+
+/**
  * @brief Listens for incoming messages on a specific IP and port.
  * @param[in] channel The channel associated to the listener.
  * @param[in] ip The local IP address to listen on.

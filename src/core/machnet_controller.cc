@@ -1,5 +1,6 @@
 #include <config.h>
 #include <dpdk.h>
+#include <eps_channel.h>
 #include <glog/logging.h>
 #include <machnet_controller.h>
 #include <machnet_ctrl.h>
@@ -247,10 +248,37 @@ bool MachnetController::CreateChannel(
   const auto channel_buffer_size =
       juggler::dpdk::PmdRing::kDefaultFrameSize - sizeof(juggler::net::Ipv4) -
       sizeof(juggler::net::Udp) - sizeof(juggler::net::MachnetPktHdr);
-  if (!channel_manager_.AddChannel(
-          channel_uuid_str.c_str(), ChannelManager::kDefaultRingSize,
-          ChannelManager::kDefaultRingSize, ChannelManager::kDefaultBufferCount,
-          channel_buffer_size) != 0) {
+
+  const bool is_eps_channel =
+      (channel_info->flags & MACHNET_CHANNEL_INFO_FLAG_EPS) != 0;
+  if (is_eps_channel) {
+#ifdef MACHNET_EPS_ENABLED
+    LOG(INFO) << "Creating EPS-backed channel " << channel_uuid_str;
+    if (!channel_manager_.AddChannelOfType<juggler::shm::EpsChannel>(
+            channel_uuid_str.c_str(), ChannelManager::kDefaultRingSize,
+            ChannelManager::kDefaultRingSize,
+            ChannelManager::kDefaultBufferCount, channel_buffer_size)) {
+      return false;
+    }
+    // Attach to the EPS BPF datapath (pinned maps, tx_ring mmap) before the
+    // engine starts polling this channel.
+    auto eps_channel = std::static_pointer_cast<juggler::shm::EpsChannel>(
+        channel_manager_.GetChannel(channel_uuid_str.c_str()));
+    if (!CHECK_NOTNULL(eps_channel)->InitEps()) {
+      LOG(ERROR) << "Failed to attach EPS channel " << channel_uuid_str
+                 << " to the EPS BPF datapath.";
+      channel_manager_.DestroyChannel(channel_uuid_str.c_str());
+      return false;
+    }
+#else
+    LOG(ERROR) << "EPS channel requested, but Machnet was built without "
+                  "libbpf support.";
+    return false;
+#endif
+  } else if (!channel_manager_.AddChannel(
+                 channel_uuid_str.c_str(), ChannelManager::kDefaultRingSize,
+                 ChannelManager::kDefaultRingSize,
+                 ChannelManager::kDefaultBufferCount, channel_buffer_size)) {
     return false;
   }
 

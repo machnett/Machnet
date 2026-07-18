@@ -369,7 +369,9 @@ fail:
   return NULL;
 }
 
-void *machnet_attach() {
+void *machnet_attach() { return machnet_attach_ex(0); }
+
+void *machnet_attach_ex(uint32_t flags) {
   uuid_t uuid;        // UUID for the shared memory channel.
   char uuid_str[37];  // 36 chars + null terminator for UUID string.
 
@@ -385,6 +387,7 @@ void *machnet_attach() {
   /* Request the default. */
   req.channel_info.desc_ring_size = MACHNET_CHANNEL_INFO_DESC_RING_SIZE_DEFAULT;
   req.channel_info.buffer_count = MACHNET_CHANNEL_INFO_BUFFER_COUNT_DEFAULT;
+  req.channel_info.flags = flags;
 
   // Send the request to the Machnet control plane.
   int channel_fd;

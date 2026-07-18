@@ -38,6 +38,12 @@ struct machnet_channel_info {
   uint32_t desc_ring_size;
 #define MACHNET_CHANNEL_INFO_BUFFER_COUNT_DEFAULT 4096
   uint32_t buffer_count;
+// Request an EPS-backed channel: the stack drains the EPS eBPF tx_ring and
+// delivers received messages into per-connection rx_rings (USER_RINGBUF)
+// instead of this channel's message rings. Requires a Machnet build with
+// libbpf support.
+#define MACHNET_CHANNEL_INFO_FLAG_EPS (1u << 0)
+  uint32_t flags;
 } __attribute__((packed));
 typedef struct machnet_channel_info machnet_channel_info_t;
 
