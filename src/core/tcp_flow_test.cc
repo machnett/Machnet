@@ -64,8 +64,8 @@ class TcpFlowTest : public ::testing::Test {
   static dpdk::TxRing* txring_;
 
   static void SetUpTestSuite() {
-    // Use port 1 (the net_null virtual device).
-    pmd_port_ = std::make_shared<dpdk::PmdPort>(1, 1, 1, 512, 512);
+    // Use port 0 (the net_null virtual device).
+    pmd_port_ = std::make_shared<dpdk::PmdPort>(0, 1, 1, 512, 512);
     pmd_port_->InitDriver();
     txring_ = pmd_port_->GetRing<dpdk::TxRing>(0);
   }
