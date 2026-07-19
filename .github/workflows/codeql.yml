@@ -21,7 +21,7 @@ jobs:
       security-events: write
 
     container:
-      image: ghcr.io/${{ github.repository }}/machnet_build_base:latest
+      image: ghcr.io/machnett/machnet/machnet_build_base:latest
       credentials:
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GITHUB_TOKEN }}

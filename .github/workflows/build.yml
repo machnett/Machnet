@@ -36,8 +36,8 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}/machnet:latest
+          tags: ghcr.io/machnett/machnet/machnet:latest
           target: machnet
           file: ./dockerfiles/ubuntu-22.04.dockerfile
-          cache-from: type=gha,ref=ghcr.io/${{ github.repository }}/machnet_build_base:latest
+          cache-from: type=gha,ref=ghcr.io/machnett/machnet/machnet_build_base:latest
           cache-to: type=gha,mode=max
