@@ -24,18 +24,21 @@ class NetworkInterfaceConfig {
                                   const net::Ethernet::Address &l2_addr,
                                   const net::Ipv4::Address &ip_addr,
                                   size_t engine_threads = 1,
-                                  cpu_set_t cpu_mask = kDefaultCpuMask)
+                                  cpu_set_t cpu_mask = kDefaultCpuMask,
+                                  const std::string vdev = "")
       : pcie_addr_(pcie_addr),
         l2_addr_(l2_addr),
         ip_addr_(ip_addr),
         engine_threads_(engine_threads),
         cpu_mask_(cpu_mask),
+        vdev_(vdev),
         dpdk_port_id_(std::nullopt) {}
   bool operator==(const NetworkInterfaceConfig &other) const {
     return l2_addr_ == other.l2_addr_;
   }
 
   const std::string &pcie_addr() const { return pcie_addr_; }
+  const std::string &vdev() const { return vdev_; }
   const net::Ethernet::Address &l2_addr() const { return l2_addr_; }
   const net::Ipv4::Address &ip_addr() const { return ip_addr_; }
   size_t engine_threads() const { return engine_threads_; }
@@ -62,6 +65,7 @@ class NetworkInterfaceConfig {
   const net::Ipv4::Address ip_addr_;
   const size_t engine_threads_;
   cpu_set_t cpu_mask_;
+  const std::string vdev_;
   std::optional<uint16_t> dpdk_port_id_;
 };
 }  // namespace juggler
