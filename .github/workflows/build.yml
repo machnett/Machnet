@@ -19,25 +19,25 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Machnet Docker image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}/machnet:latest
+          tags: ghcr.io/machnett/machnet/machnet:latest
           target: machnet
           file: ./dockerfiles/ubuntu-22.04.dockerfile
-          cache-from: type=gha,ref=ghcr.io/${{ github.repository }}/machnet_build_base:latest
+          cache-from: type=gha,ref=ghcr.io/machnett/machnet/machnet_build_base:latest
           cache-to: type=gha,mode=max
