@@ -84,7 +84,7 @@ void MachnetConfigProcessor::AssertJsonValidMachnetConfig() {
     }
     for (const auto &[key, _] : interface.items()) {
       if (key != "ip" && key != "engine_threads" && key != "cpu_mask" &&
-          key != "pcie") {
+          key != "pcie" && key != "vdev") {
         LOG(FATAL) << "Invalid key " << key << " in " << interface << " in "
                    << config_json_filename_;
       }
@@ -121,8 +121,18 @@ void MachnetConfigProcessor::DiscoverInterfaceConfiguration() {
       LOG(INFO) << "Using default CPU mask for " << l2_addr.ToString();
     }
 
+    // A "vdev" interface (e.g. a DPDK net_tap virtual device) is not backed by
+    // a PCIe NIC, so skip PCIe address discovery when one is specified.
+    std::string vdev = "";
+    if (json_val.find("vdev") != json_val.end()) {
+      vdev = json_val.at("vdev");
+      LOG(INFO) << "Using DPDK vdev '" << vdev << "' for " << l2_addr.ToString();
+    }
+
     std::string pci_addr = "";
-    if (json_val.find("pcie") != json_val.end()) {
+    if (vdev != "") {
+      // No PCIe address for a vdev-backed interface.
+    } else if (json_val.find("pcie") != json_val.end()) {
       pci_addr = json_val.at("pcie");
       LOG(INFO) << "Using config file PCIe address " << pci_addr << " for "
                 << l2_addr.ToString();
@@ -138,7 +148,7 @@ void MachnetConfigProcessor::DiscoverInterfaceConfiguration() {
     }
 
     interfaces_config_.emplace(pci_addr, l2_addr, ip_addr, engine_threads,
-                               cpu_mask);
+                               cpu_mask, vdev);
   }
   for (const auto &interface : interfaces_config_) {
     interface.Dump();
@@ -151,14 +161,22 @@ utils::CmdLineOpts MachnetConfigProcessor::GetEalOpts() const {
   eal_opts.Append({"-c", "0x1"});
   eal_opts.Append({"-n", "4"});
   eal_opts.Append({"--telemetry"});
+  bool uses_vdev = false;
   for (const auto &interface : interfaces_config_) {
-    if (interface.pcie_addr() != "") {
+    if (interface.vdev() != "") {
+      eal_opts.Append({"--vdev", interface.vdev()});
+      uses_vdev = true;
+    } else if (interface.pcie_addr() != "") {
       eal_opts.Append({"-a", interface.pcie_addr()});
     } else {
       LOG(WARNING) << "Not passing PCIe allowlist for interface "
                    << interface.l2_addr().ToString();
     }
   }
+
+  // When running purely on virtual devices (e.g. net_tap for local testing),
+  // disable PCIe probing so EAL doesn't try to attach host NICs.
+  if (uses_vdev) eal_opts.Append({"--no-pci"});
 
   return eal_opts;
 }
