@@ -80,5 +80,14 @@ int main(int argc, char **argv) {
       juggler::dpdk::PmdRing::kJumboFrameSize + RTE_PKTMBUF_HEADROOM));
   CHECK_NOTNULL(g_tx_pkt_pool);
 
-  return RUN_ALL_TESTS();
+  const int result = RUN_ALL_TESTS();
+
+  // Destroy the port and packet pool while EAL is still initialized. Otherwise
+  // the local Dpdk `d` runs rte_eal_cleanup() first (on return), freeing the
+  // mempool memory, and these globals' destructors then dereference freed
+  // memory (PacketPool logs mpool_->name), causing a segfault at exit.
+  g_tx_pkt_pool.reset();
+  g_pmd.reset();
+
+  return result;
 }
