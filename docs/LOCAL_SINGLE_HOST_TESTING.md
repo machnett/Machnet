@@ -42,6 +42,11 @@ Why `net_tap` and not `vhost-user`/`virtio-user`/`af_xdp`:
 - `vhost-user` needs a virtio *front-end* (a VM or another DPDK/virtio process) —
   a plain host socket can't drive it.
 - `virtio-user`+kernel `vhost-net` is higher-throughput but more moving parts.
+  A ready-made variant of this test over vhost now exists as
+  `examples/local_vhost_test.sh` (same topology, `virtio_user0` +
+  `/dev/vhost-net` instead of `net_tap0`). Because `virtio_user` — unlike
+  `net_tap` — has no checksum offloads, the engine falls back to software
+  checksums on such ports (`Packet::compute_software_checksums`).
 - `af_xdp`/`af_packet` PMD on a `veth` pair also works but is fiddlier.
 - `net_tap` is the simplest reliable choice for a *functional* single-host test.
 

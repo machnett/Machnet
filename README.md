@@ -134,6 +134,26 @@ MSG_GEN="~/machnet/build/src/apps/msg_gen/msg_gen"
 ```
 
 
+## Local development without a NIC
+
+You can develop and test Machnet on a single Linux machine with no dedicated
+NIC, VM, or cloud setup, by running the engine on a DPDK virtual device and
+talking to it from the kernel network stack. See
+[docs/LOCAL_SINGLE_HOST_TESTING.md](docs/LOCAL_SINGLE_HOST_TESTING.md) for the
+full guide. Two one-command variants exist:
+
+```bash
+# Build Machnet first (see CONTRIBUTING.md), then from the repo root:
+./scripts/local_tap_tcp_test.sh     # net_tap device (simplest)
+./examples/local_vhost_test.sh      # vhost port (virtio_user + kernel vhost-net)
+```
+
+Both run a Machnet TCP server against a standard POSIX TCP client through the
+virtual device. The vhost variant exercises the same datapath used by
+virtio-based deployments and is the higher-throughput local option; see the
+comments in [local_vhost_test.sh](examples/local_vhost_test.sh) for details.
+
+
 ## Machnet API
 
 See [machnet.h](src/ext/machnet.h) for the full API documentation.  Applications use the following steps to interact with the Machnet service:

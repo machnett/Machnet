@@ -20,6 +20,8 @@ the interface, and the value is a dictionary with the following fields:
    * `ip`: the IP address of the interface.
    * `engine_threads`: The number of threads (and NIC HW queues) to use for this interface.
    * `cpu_mask`: The CPU mask to use to affine all engine threads. If not specified, the default is to use all available cores.
+   * `pcie`: (optional) The PCIe address of the interface. If not specified, Machnet discovers it from sysfs using the MAC address.
+   * `vdev`: (optional) A DPDK virtual device specification (e.g., `net_tap0,iface=mtap0,mac=02:00:00:00:00:01` or `virtio_user0,path=/dev/vhost-net,...`) to use instead of a physical NIC, for local development and testing. Passed to DPDK as `--vdev` (PCI probing is disabled when vdevs are used). See [docs/LOCAL_SINGLE_HOST_TESTING.md](../../../docs/LOCAL_SINGLE_HOST_TESTING.md), [scripts/local_tap_tcp_test.sh](../../../scripts/local_tap_tcp_test.sh) and [examples/local_vhost_test.sh](../../../examples/local_vhost_test.sh).
 
 **Example [config.json](config.json):**
 ```json

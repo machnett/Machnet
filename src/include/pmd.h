@@ -111,6 +111,7 @@ class TxRing : public PmdRing {
    * @return Number of packets successfully sent.
    */
   uint16_t TrySendPackets(Packet **pkts, uint16_t nb_pkts) const {
+    PrepareChecksums(pkts, nb_pkts);
     const uint16_t nb_success =
         rte_eth_tx_burst(this->GetPortId(), this->GetRingId(),
                          reinterpret_cast<struct rte_mbuf **>(pkts), nb_pkts);
@@ -139,6 +140,7 @@ class TxRing : public PmdRing {
    * @param nb_pkts Number of packets to send.
    */
   void SendPackets(Packet **pkts, uint16_t nb_pkts) const {
+    PrepareChecksums(pkts, nb_pkts);
     uint16_t nb_remaining = nb_pkts;
 
     do {
@@ -170,7 +172,19 @@ class TxRing : public PmdRing {
   }
 
  private:
+  /**
+   * @brief Computes checksums in software when the port lacks TX checksum
+   * offloads (set up in `Init()'). No-op on ports with hardware offloads.
+   */
+  void PrepareChecksums(Packet **pkts, uint16_t nb_pkts) const {
+    if (!software_checksums_) return;
+    for (uint16_t i = 0; i < nb_pkts; ++i) {
+      pkts[i]->compute_software_checksums();
+    }
+  }
+
   struct rte_eth_txconf conf_;
+  bool software_checksums_{false};
 };
 
 /**
@@ -361,6 +375,13 @@ class PmdPort {
   net::Ethernet::Address GetL2Addr() const { return l2_addr_; }
 
   /**
+   * @brief Whether TX checksum offloads were enabled at port configuration
+   * time. When false (e.g. virtual devices like `net_virtio_user'), TX rings
+   * compute checksums in software instead.
+   */
+  bool tx_csum_offload_enabled() const { return tx_csum_offload_enabled_; }
+
+  /**
    * @brief Retrieves the port's RSS (Receive Side Scaling) key.
    *
    * @return A vector containing the RSS hash key bytes.
@@ -475,6 +496,7 @@ class PmdPort {
   std::vector<rte_eth_rss_reta_entry64> rss_reta_conf_;
   struct rte_eth_stats port_stats_;
   std::vector<uint8_t> rss_hash_key_;
+  bool tx_csum_offload_enabled_{true};
   bool initialized_;
 };
 }  // namespace dpdk
