@@ -5,7 +5,11 @@
 #include <ether.h>
 #include <glog/logging.h>
 #include <ipv4.h>
+#include <rte_ether.h>
+#include <rte_ip.h>
 #include <rte_mbuf.h>
+#include <rte_tcp.h>
+#include <rte_udp.h>
 #include <utils.h>
 
 #include <cstdint>
@@ -104,6 +108,44 @@ class alignas(juggler::hardware_constructive_interference_size) Packet {
   void offload_tcpv4_csum() {
     offload_ipv4_csum();
     mbuf_.ol_flags |= (RTE_MBUF_F_TX_TCP_CKSUM);
+  }
+
+  /**
+   * @brief Computes any requested IPv4/L4 checksums in software and clears the
+   * corresponding TX offload flags. Used on ports whose driver lacks checksum
+   * offloads (e.g. `net_virtio_user'); the datapath always requests offloads,
+   * so without this such packets would leave with invalid checksums.
+   * @note Assumes a single-segment Ethernet/IPv4 packet, as produced by the
+   * Machnet datapath.
+   */
+  void compute_software_checksums() {
+    constexpr uint64_t kTxCsumFlags =
+        RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM | RTE_MBUF_F_TX_L4_MASK;
+    if (!(mbuf_.ol_flags & kTxCsumFlags)) return;
+    if (length() < sizeof(rte_ether_hdr) + sizeof(rte_ipv4_hdr)) return;
+
+    auto *eh = head_data<rte_ether_hdr *>();
+    if (eh->ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4)) return;
+    auto *iph = reinterpret_cast<rte_ipv4_hdr *>(eh + 1);
+
+    const uint64_t l4_type = mbuf_.ol_flags & RTE_MBUF_F_TX_L4_MASK;
+    if (l4_type == RTE_MBUF_F_TX_UDP_CKSUM ||
+        l4_type == RTE_MBUF_F_TX_TCP_CKSUM) {
+      auto *l4 = reinterpret_cast<uint8_t *>(iph) + rte_ipv4_hdr_len(iph);
+      if (l4_type == RTE_MBUF_F_TX_UDP_CKSUM) {
+        reinterpret_cast<rte_udp_hdr *>(l4)->dgram_cksum = 0;
+        reinterpret_cast<rte_udp_hdr *>(l4)->dgram_cksum =
+            rte_ipv4_udptcp_cksum(iph, l4);
+      } else {
+        reinterpret_cast<rte_tcp_hdr *>(l4)->cksum = 0;
+        reinterpret_cast<rte_tcp_hdr *>(l4)->cksum =
+            rte_ipv4_udptcp_cksum(iph, l4);
+      }
+    }
+
+    iph->hdr_checksum = 0;
+    iph->hdr_checksum = rte_ipv4_cksum(iph);
+    mbuf_.ol_flags &= ~kTxCsumFlags;
   }
 
   /**

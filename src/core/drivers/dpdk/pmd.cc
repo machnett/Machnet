@@ -63,8 +63,15 @@ static rte_eth_conf DefaultEthConf(const rte_eth_dev_info *devinfo) {
   const auto tx_offload_capa = devinfo->tx_offload_capa;
   if (!(tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM) ||
       !(tx_offload_capa & RTE_ETH_TX_OFFLOAD_UDP_CKSUM)) {
-    // Making this fatal; not sure what NIC does not support checksum offloads.
-    LOG(FATAL) << "Hardware does not support checksum offloads.";
+    // Virtual devices (e.g., `net_vhost', `net_virtio_user') do not support
+    // checksum offloads. Machnet leaves checksum fields unfilled and relies on
+    // the offloads, so a port without them is only usable on a local loop
+    // where nothing verifies checksums (see examples/local_vhost_test.sh).
+    LOG(WARNING) << "Driver " << devinfo->driver_name
+                 << " does not support TX checksum offloads. Falling back to "
+                    "a basic ethernet configuration; outgoing checksums are "
+                    "NOT computed. Use this port for local testing only.";
+    return rte_eth_conf();
   }
 
   port_conf.txmode.mq_mode = RTE_ETH_MQ_TX_NONE;
@@ -95,6 +102,12 @@ static rte_eth_conf DefaultEthConf(const rte_eth_dev_info *devinfo) {
 }
 
 void TxRing::Init() {
+  software_checksums_ = !this->GetPmdPort()->tx_csum_offload_enabled();
+  if (software_checksums_) {
+    LOG(WARNING) << "TX ring " << this->GetRingId() << " of port "
+                 << static_cast<int>(this->GetPortId())
+                 << " will compute checksums in software.";
+  }
   int ret = rte_eth_tx_queue_setup(this->GetPortId(), this->GetRingId(),
                                    this->GetDescNum(), SOCKET_ID_ANY, &conf_);
   if (ret != 0) {
@@ -148,6 +161,8 @@ void PmdPort::InitDriver(uint16_t mtu) {
 
     LOG(INFO) << "Rings nr: " << rx_rings_nr_;
     const rte_eth_conf portconf = DefaultEthConf(&devinfo_);
+    tx_csum_offload_enabled_ =
+        (portconf.txmode.offloads & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM) != 0;
     int ret =
         rte_eth_dev_configure(port_id_, rx_rings_nr_, tx_rings_nr_, &portconf);
     if (ret != 0) {
@@ -248,8 +263,18 @@ void PmdPort::InitDriver(uint16_t mtu) {
           << static_cast<int>(port_id_);
     }
 
-    const auto mbuf_data_size =
+    auto mbuf_data_size =
         mtu + RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN + RTE_PKTMBUF_HEADROOM;
+    if (!tx_csum_offload_enabled_) {
+      // Virtual devices (e.g. net_virtio_user) prepend a virtio-net header and,
+      // with Rx scatter disabled, require the whole frame *plus* that header to
+      // fit in a single mbuf segment; a buffer sized for exactly MTU+L2 falls
+      // short and rte_eth_rx_queue_setup() fails. Give these ports a full
+      // default buffer so RX setup succeeds while keeping the single-segment
+      // datapath assumption intact.
+      mbuf_data_size = std::max<uint32_t>(mbuf_data_size,
+                                          RTE_MBUF_DEFAULT_BUF_SIZE);
+    }
 
     // Setup the TX queues.
     for (auto q = 0; q < tx_rings_nr_; q++) {
