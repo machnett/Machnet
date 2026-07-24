@@ -263,8 +263,18 @@ void PmdPort::InitDriver(uint16_t mtu) {
           << static_cast<int>(port_id_);
     }
 
-    const auto mbuf_data_size =
+    auto mbuf_data_size =
         mtu + RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN + RTE_PKTMBUF_HEADROOM;
+    if (!tx_csum_offload_enabled_) {
+      // Virtual devices (e.g. net_virtio_user) prepend a virtio-net header and,
+      // with Rx scatter disabled, require the whole frame *plus* that header to
+      // fit in a single mbuf segment; a buffer sized for exactly MTU+L2 falls
+      // short and rte_eth_rx_queue_setup() fails. Give these ports a full
+      // default buffer so RX setup succeeds while keeping the single-segment
+      // datapath assumption intact.
+      mbuf_data_size = std::max<uint32_t>(mbuf_data_size,
+                                          RTE_MBUF_DEFAULT_BUF_SIZE);
+    }
 
     // Setup the TX queues.
     for (auto q = 0; q < tx_rings_nr_; q++) {
